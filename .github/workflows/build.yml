@@ -79,7 +79,7 @@ jobs:
         env:
           BOOT_SIGN_KEY: ${{ secrets.BOOT_SIGN_KEY }}
         run: |
-          if [ ! -z "$BOOT_SIGN_KEY" ]; then
+          if[ ! -z "$BOOT_SIGN_KEY" ]; then
             echo "$BOOT_SIGN_KEY" > ./kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem
           fi
 
@@ -87,8 +87,8 @@ jobs:
         run: |
           ANYKERNEL_BRANCH="gki-2.0"
           
-          if [ "${{ inputs.android_version }}" = "android16" ]; then
-            SUSFS_BRANCH="gki-android15-6.1"
+          if[ "${{ inputs.kernel_version }}" = "6.1" ]; then
+            SUSFS_BRANCH="gki-android14-6.1"
           else
             SUSFS_BRANCH="gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}"
           fi
@@ -201,8 +201,8 @@ jobs:
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-          if [ "${{ inputs.android_version }}" = "android16" ]; then
-            SUSFS_PATCH="50_add_susfs_in_gki-android15-6.1.patch"
+          if[ "${{ inputs.kernel_version }}" = "6.1" ]; then
+            SUSFS_PATCH="50_add_susfs_in_gki-android14-6.1.patch"
           else
             SUSFS_PATCH="50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
           fi
@@ -210,8 +210,6 @@ jobs:
           # Apply core SUSFS patches
           cp ../susfs4ksu/kernel_patches/$SUSFS_PATCH ./common/
           cd common
-
-          # Pre-SUSFS sed safeguards removed; moved below core patch
 
           # Apply SUSFS core patch
           patch -p1 < $SUSFS_PATCH || true
@@ -286,7 +284,7 @@ jobs:
           REJ_COUNT=${#REJS[@]}
           echo "Found $REJ_COUNT .rej files under $CONFIG_DIR"
           echo "REJ_COUNT=$REJ_COUNT" >> $GITHUB_ENV
-          if [ "$REJ_COUNT" -gt 0 ]; then
+          if[ "$REJ_COUNT" -gt 0 ]; then
             for REJ in "${REJS[@]}"; do
               # Relative path from $CONFIG
               REL="${REJ#"$CONFIG_DIR"/}"
@@ -295,7 +293,7 @@ jobs:
               cp "$REJ" "$DEST"
               # Copy the associated original file alongside the .rej
               ORIG="${REJ%.rej}"
-              if [ -f "$ORIG" ]; then
+              if[ -f "$ORIG" ]; then
                 ORIG_DEST="$REJECTS_DIR/${REL%.rej}"
                 mkdir -p "$(dirname "$ORIG_DEST")"
                 cp "$ORIG" "$ORIG_DEST"
@@ -532,7 +530,7 @@ jobs:
       - name: Find files (before hide.patch)
         run: |
           cd "$CONFIG/common"
-          if [ -f "fs/proc/task_mmu.c" ]; then
+          if[ -f "fs/proc/task_mmu.c" ]; then
             cp "fs/proc/task_mmu.c" "$GITHUB_WORKSPACE/${{ env.FILE_NAME }}-task_mmu.c.before"
             echo "Copied pre-patch task_mmu.c"
           else
@@ -543,10 +541,10 @@ jobs:
         run: |
           cd "$CONFIG/common"
           PATCH_SRC="${GITHUB_WORKSPACE}/hide.patch"
-          if[ ! -f "$PATCH_SRC" ]; then
+          if [ ! -f "$PATCH_SRC" ]; then
             PATCH_SRC="../../hide.patch"
           fi
-          if[ -f "$PATCH_SRC" ]; then
+          if [ -f "$PATCH_SRC" ]; then
             echo "Found hide.patch at $PATCH_SRC"
             cp "$PATCH_SRC" ./hide.patch
             patch -p1 -F 3 -i hide.patch || true
@@ -557,7 +555,7 @@ jobs:
       - name: Find files (after hide.patch)
         run: |
           cd "$CONFIG/common"
-          if [ -f "fs/proc/task_mmu.c" ]; then
+          if[ -f "fs/proc/task_mmu.c" ]; then
             cp "fs/proc/task_mmu.c" "$GITHUB_WORKSPACE/${{ env.FILE_NAME }}-task_mmu.c.after"
             echo "Copied post-patch task_mmu.c"
           else
@@ -570,7 +568,7 @@ jobs:
           set -x
           cd "$CONFIG"
           echo "Building the kernel..."
-          if[ -f "build/build.sh" ]; then
+          if [ -f "build/build.sh" ]; then
             LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
           else
             tools/bazel build --config=fast --lto=thin //common:kernel_aarch64_dist || exit 1
@@ -596,10 +594,10 @@ jobs:
           cp "./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/snd-aloop.ko" AnyKernel3/modules/data/adb/lkm/
 
       - name: Copy snd-aloop module for Android 14-15
-        if: inputs.android_version == 'android14' || inputs.android_version == 'android15'
+        if: inputs.android_version == 'android14' || inputs.android_version == 'android15' || inputs.android_version == 'android16'
         run: |
           mkdir -p AnyKernel3/modules/data/adb/lkm
-          cp "./$CONFIG/bazel-bin/common/kernel_aarch64/snd-aloop.ko" AnyKernel3/modules/data/adb/lkm/
+          cp "./$CONFIG/bazel-bin/common/kernel_aarch64/snd-aloop.ko" AnyKernel3/modules/data/adb/lkm/ || true
 
       - name: Search for Kernel Modules
         run: |
@@ -610,12 +608,12 @@ jobs:
             local search_dir="$1"
             local module_count=0
             
-            if [ -d "$search_dir" ]; then
+            if[ -d "$search_dir" ]; then
               echo "Scanning directory: $search_dir"
               
               # Find all .ko files and report their locations
               while IFS= read -r -d '' module_file; do
-                if[ -f "$module_file" ]; then
+                if [ -f "$module_file" ]; then
                   module_name=$(basename "$module_file")
                   echo "Found module: $module_name in $(dirname "$module_file")"
                   ((module_count++))
@@ -647,7 +645,7 @@ jobs:
           # Look for snd-aloop.ko specifically
           echo "Searching specifically for snd-aloop.ko..."
           snd_aloop_found=$(find ./$CONFIG -name "snd-aloop.ko" -type f 2>/dev/null | head -1)
-          if [ -n "$snd_aloop_found" ]; then
+          if[ -n "$snd_aloop_found" ]; then
             echo "Found snd-aloop.ko at: $snd_aloop_found"
           else
             echo "snd-aloop.ko not found"
@@ -668,8 +666,8 @@ jobs:
           gzip -n -k -f -9 ./${{ env.FILE_NAME }}-Image > ./${{ env.FILE_NAME }}-Image.gz
           gzip -n -k -f -9 ./bootimgs/Image > ./bootimgs/Image.gz
 
-      - name: Create Bootimgs Folder and Copy Images for Android 14/15
-        if: ${{ inputs.android_version == 'android14' || inputs.android_version == 'android15' }}
+      - name: Create Bootimgs Folder and Copy Images for Android 14/15/16
+        if: ${{ inputs.android_version == 'android14' || inputs.android_version == 'android15' || inputs.android_version == 'android16' }}
         run: |
           mkdir bootimgs
           cp ./$CONFIG/bazel-bin/common/kernel_aarch64/Image ./bootimgs
@@ -716,8 +714,8 @@ jobs:
           $AVBTOOL add_hash_footer --partition_name boot --partition_size $((64 * 1024 * 1024)) --image boot-lz4.img --algorithm SHA256_RSA2048 --key $BOOT_SIGN_KEY_PATH
           cp ./boot-lz4.img ../${{ env.FILE_NAME }}-boot-lz4.img
 
-      - name: Android 13/14/15 boot image build script
-        if: ${{ inputs.android_version == 'android13' || inputs.android_version == 'android14' || inputs.android_version == 'android15' }}
+      - name: Android 13/14/15/16 boot image build script
+        if: ${{ inputs.android_version == 'android13' || inputs.android_version == 'android14' || inputs.android_version == 'android15' || inputs.android_version == 'android16' }}
         run: |
           cd bootimgs
           
@@ -794,11 +792,11 @@ jobs:
           fi
           
           # Get Baseband-guard commit
-          if[ -d "$CONFIG/Baseband-guard" ]; then
+          if [ -d "$CONFIG/Baseband-guard" ]; then
             cd "$CONFIG/Baseband-guard"
             BBG_COMMIT=$(git rev-parse HEAD)
             BBG_URL="https://github.com/vc-teahouse/Baseband-guard/commit/$BBG_COMMIT"
-            echo "- **Baseband-guard**:[$BBG_COMMIT]($BBG_URL)" >> "$GITHUB_WORKSPACE/build_summary.md"
+            echo "- **Baseband-guard**: [$BBG_COMMIT]($BBG_URL)" >> "$GITHUB_WORKSPACE/build_summary.md"
             cd "$GITHUB_WORKSPACE"
           else
             echo "- **Baseband-guard**: not present" >> build_summary.md
@@ -830,18 +828,18 @@ jobs:
           echo "### Misc (uploaded files)" >> build_summary.md
           FILES_PRESENT=0
           for f in "${{ env.FILE_NAME }}-Image" "${{ env.FILE_NAME }}-Image.gz" "${{ env.FILE_NAME }}-Image.lz4" "${{ env.FILE_NAME }}-boot.img" "${{ env.FILE_NAME }}-boot-gz.img" "${{ env.FILE_NAME }}-boot-lz4.img"; do
-            if[ -f "$f" ]; then FILES_PRESENT=$((FILES_PRESENT+1)); fi
+            if [ -f "$f" ]; then FILES_PRESENT=$((FILES_PRESENT+1)); fi
           done
-          if[ "$FILES_PRESENT" -gt 0 ]; then
+          if [ "$FILES_PRESENT" -gt 0 ]; then
             MISC_STATUS="✅"
           else
             MISC_STATUS="❌"
           fi
           echo "- **Set**: $MISC_STATUS ${{ env.FILE_NAME }}-Misc" >> build_summary.md
-          if[ "$MISC_STATUS" = "✅" ]; then
+          if [ "$MISC_STATUS" = "✅" ]; then
             echo "  Included:" >> build_summary.md
             for f in "${{ env.FILE_NAME }}-Image" "${{ env.FILE_NAME }}-Image.gz" "${{ env.FILE_NAME }}-Image.lz4" "${{ env.FILE_NAME }}-boot.img" "${{ env.FILE_NAME }}-boot-gz.img" "${{ env.FILE_NAME }}-boot-lz4.img"; do
-              if [ -f "$f" ]; then
+              if[ -f "$f" ]; then
                 echo "  - $f" >> build_summary.md
               fi
             done
@@ -849,8 +847,8 @@ jobs:
 
           echo "### Diagnostics" >> build_summary.md
           echo "- **Rejected Patches**: ${{ env.FILE_NAME }}-Rejected-Patches" >> build_summary.md
-          if [ -f patch-rejects/index.txt ]; then
-            if [ -s patch-rejects/index.txt ]; then
+          if[ -f patch-rejects/index.txt ]; then
+            if[ -s patch-rejects/index.txt ]; then
               echo "  Rejected files:" >> build_summary.md
               while IFS= read -r line; do
                 echo "    - $line" >> build_summary.md
