@@ -86,7 +86,12 @@ jobs:
       - name: Clone AnyKernel3 and Other Dependencies
         run: |
           ANYKERNEL_BRANCH="gki-2.0"
-          SUSFS_BRANCH="gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}"
+          
+          if [ "${{ inputs.android_version }}" = "android16" ]; then
+            SUSFS_BRANCH="gki-android15-6.1"
+          else
+            SUSFS_BRANCH="gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}"
+          fi
           
           git clone https://github.com/WildKernels/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
           git clone https://github.com/WildKernels/kernel_patches.git
@@ -128,7 +133,7 @@ jobs:
           if [ -f "Makefile" ]; then
             ACTUAL_SUBLEVEL=$(grep '^SUBLEVEL = ' Makefile | awk '{print $3}')
             
-            if [ -n "$ACTUAL_SUBLEVEL" ]; then
+            if[ -n "$ACTUAL_SUBLEVEL" ]; then
               echo "ACTUAL_SUBLEVEL=$ACTUAL_SUBLEVEL" >> $GITHUB_ENV
               echo "Extracted ACTUAL_SUBLEVEL=$ACTUAL_SUBLEVEL; no directory changes performed."
             else
@@ -145,7 +150,7 @@ jobs:
               ([[ "${{ inputs.android_version }}" == "android14" ]] && [[ "${{ inputs.kernel_version }}" == "5.15" ]] && (( $ACTUAL_SUBLEVEL <= 110 ))) || 
               ([[ "${{ inputs.android_version }}" == "android14" ]] && [[ "${{ inputs.kernel_version }}" == "6.1" ]] && (( $ACTUAL_SUBLEVEL <= 43 ))); then
             GLIBC_VERSION=$(ldd --version 2>/dev/null | head -n 1 | awk '{print $NF}') 
-            if [ "$(printf '%s\n' "2.38" "$GLIBC_VERSION" | sort -V | head -n1)" = "2.38" ]; then 
+            if[ "$(printf '%s\n' "2.38" "$GLIBC_VERSION" | sort -V | head -n1)" = "2.38" ]; then 
               cd $CONFIG/common/
               sed -i '/\$(Q)\$(MAKE) -C \$(SUBCMD_SRC) OUTPUT=\$(abspath \$(dir \$@))\/ \$(abspath \$@)/s//$(Q)$(MAKE) -C $(SUBCMD_SRC) EXTRA_CFLAGS="$(CFLAGS)" OUTPUT=$(abspath $(dir $@))\/ $(abspath $@)/' tools/bpf/resolve_btfids/Makefile 2>/dev/null || true
               if ([[ "${{ inputs.android_version }}" == "android13" ]] && [[ "${{ inputs.kernel_version }}" == "5.10" ]] && (( $ACTUAL_SUBLEVEL <= 186 ))) || 
@@ -158,8 +163,6 @@ jobs:
               fi
             fi
           fi 
-
-      
 
       - name: Fix Less Then 6.6.50 Builds
         if: inputs.android_version == 'android15' && inputs.kernel_version == '6.6'
@@ -175,14 +178,14 @@ jobs:
           cd "$CONFIG/common"
           patch -p1 -F 3 < "../../kernel_patches/gki_ptrace.patch"
 
-      - name: Add KernelSU
+      - name: Add KernelSU-Next
         run: |
           cd "$CONFIG"
-          curl -LSs "https://raw.githubusercontent.com/WildKernels/Wild_KSU/wild/kernel/setup.sh" | bash -s wild
+          curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
 
       - name: Getting KernelSU Version
         run: |
-          cd "$CONFIG/Wild_KSU/kernel"
+          cd "$CONFIG/KernelSU-Next/kernel"
           BASE_VERSION=10200
           COMMIT_COUNT=$(/usr/bin/git rev-list --count HEAD)
           KSU_VERSION=$(expr $COMMIT_COUNT "+" $BASE_VERSION)
@@ -198,14 +201,20 @@ jobs:
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
+          if [ "${{ inputs.android_version }}" = "android16" ]; then
+            SUSFS_PATCH="50_add_susfs_in_gki-android15-6.1.patch"
+          else
+            SUSFS_PATCH="50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch"
+          fi
+
           # Apply core SUSFS patches
-          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch ./common/
+          cp ../susfs4ksu/kernel_patches/$SUSFS_PATCH ./common/
           cd common
 
           # Pre-SUSFS sed safeguards removed; moved below core patch
 
           # Apply SUSFS core patch
-          patch -p1 < 50_add_susfs_in_gki-${{ inputs.android_version }}-${{ inputs.kernel_version }}.patch || true
+          patch -p1 < $SUSFS_PATCH || true
 
           # Post-SUSFS sed safeguards for task_mmu.c 'goto show_pad' handling
           if ( ( [[ "${{ inputs.android_version }}" == "android12" ]] && [[ "${{ inputs.kernel_version }}" == "5.10" ]] && (( $ACTUAL_SUBLEVEL <= 209 )) ) \
@@ -246,24 +255,24 @@ jobs:
           fi
 
           # Apply KSU integration patches
-          cd ../Wild_KSU
+          cd ../KernelSU-Next
           cp ../../susfs4ksu/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch .
           patch -p1 < 10_enable_susfs_for_ksu.patch || true
           
           cp ../../kernel_patches/wild/susfs_fix_patches/v${SUSFS_VERSION}/fix_core_hook.c.patch ./
-          patch -p1 < fix_core_hook.c.patch
+          patch -p1 < fix_core_hook.c.patch || true
 
           cp ../../kernel_patches/wild/susfs_fix_patches/v${SUSFS_VERSION}/fix_sucompat.c.patch ./
-          patch -p1 < fix_sucompat.c.patch
+          patch -p1 < fix_sucompat.c.patch || true
 
           cp ../../kernel_patches/wild/susfs_fix_patches/v${SUSFS_VERSION}/fix_kernel_compat.c.patch ./
-          patch -p1 < fix_kernel_compat.c.patch
+          patch -p1 < fix_kernel_compat.c.patch || true
 
       - name: Apply Hooks Patches
         run: |
           cd "$CONFIG/common"
           cp ../../kernel_patches/wild/hooks/scope_min_manual_hooks_v1.4.patch ./
-          patch -p1 -F 3 < scope_min_manual_hooks_v1.4.patch
+          patch -p1 -F 3 < scope_min_manual_hooks_v1.4.patch || true
 
       - name: Scan and collect patch rejects
         if: ${{ always() }}
@@ -467,7 +476,7 @@ jobs:
           
           # Add symbols to abi_gki_aarch64
           #SYMBOL_LIST=common/android/abi_gki_aarch64
-          #cat Wild_KSU/kernel/export_symbol.txt | awk '{sub("[ \t]+","");print "  "$0}' >> $SYMBOL_LIST
+          #cat KernelSU-Next/kernel/export_symbol.txt | awk '{sub("[ \t]+","");print "  "$0}' >> $SYMBOL_LIST
 
           # ABI compare bypass per kernel/android version
           # Edit each block as needed per version
@@ -534,10 +543,10 @@ jobs:
         run: |
           cd "$CONFIG/common"
           PATCH_SRC="${GITHUB_WORKSPACE}/hide.patch"
-          if [ ! -f "$PATCH_SRC" ]; then
+          if[ ! -f "$PATCH_SRC" ]; then
             PATCH_SRC="../../hide.patch"
           fi
-          if [ -f "$PATCH_SRC" ]; then
+          if[ -f "$PATCH_SRC" ]; then
             echo "Found hide.patch at $PATCH_SRC"
             cp "$PATCH_SRC" ./hide.patch
             patch -p1 -F 3 -i hide.patch || true
@@ -561,7 +570,7 @@ jobs:
           set -x
           cd "$CONFIG"
           echo "Building the kernel..."
-          if [ -f "build/build.sh" ]; then
+          if[ -f "build/build.sh" ]; then
             LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh || exit 1
           else
             tools/bazel build --config=fast --lto=thin //common:kernel_aarch64_dist || exit 1
@@ -570,9 +579,9 @@ jobs:
       - name: Prepare AnyKernel3
         run: |
           # Copy Image from normal build locations
-          if [ -f "./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image" ]; then
+          if[ -f "./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image" ]; then
             cp ./$CONFIG/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist/Image AnyKernel3/Image
-          elif [ -f "./$CONFIG/bazel-bin/common/kernel_aarch64/Image" ]; then
+          elif[ -f "./$CONFIG/bazel-bin/common/kernel_aarch64/Image" ]; then
             cp ./$CONFIG/bazel-bin/common/kernel_aarch64/Image AnyKernel3/Image
           else
             echo "Error: Image file not found in any expected location"
@@ -606,7 +615,7 @@ jobs:
               
               # Find all .ko files and report their locations
               while IFS= read -r -d '' module_file; do
-                if [ -f "$module_file" ]; then
+                if[ -f "$module_file" ]; then
                   module_name=$(basename "$module_file")
                   echo "Found module: $module_name in $(dirname "$module_file")"
                   ((module_count++))
@@ -683,7 +692,7 @@ jobs:
           # Check if the GKI URL is available
           status=$(curl -sL -w "%{http_code}" "$GKI_URL" -o /dev/null)
           
-          if [ "$status" = "200" ]; then
+          if[ "$status" = "200" ]; then
               curl -Lo gki-kernel.zip "$GKI_URL"
           else
               curl -Lo gki-kernel.zip "$FALLBACK_URL"
@@ -773,30 +782,30 @@ jobs:
           echo "- **Bypass Mode**: ${{ matrix.apply_bypass }}" >> build_summary.md
           echo "" >> build_summary.md
 
-          # Get Wild_KSU commit
-          if [ -d "$CONFIG/Wild_KSU" ]; then
-            cd "$CONFIG/Wild_KSU"
+          # Get KernelSU-Next commit
+          if [ -d "$CONFIG/KernelSU-Next" ]; then
+            cd "$CONFIG/KernelSU-Next"
             WKSU_COMMIT=$(git rev-parse HEAD)
-            WKSU_URL="https://github.com/WildKernels/Wild_KSU/commit/$WKSU_COMMIT"
-            echo "- **Wild_KSU**: [$WKSU_COMMIT]($WKSU_URL)" >> "$GITHUB_WORKSPACE/build_summary.md"
+            WKSU_URL="https://github.com/rifsxd/KernelSU-Next/commit/$WKSU_COMMIT"
+            echo "- **KernelSU-Next**: [$WKSU_COMMIT]($WKSU_URL)" >> "$GITHUB_WORKSPACE/build_summary.md"
             cd "$GITHUB_WORKSPACE"
           else
-            echo "- **Wild_KSU**: not present" >> build_summary.md
+            echo "- **KernelSU-Next**: not present" >> build_summary.md
           fi
           
           # Get Baseband-guard commit
-          if [ -d "$CONFIG/Baseband-guard" ]; then
+          if[ -d "$CONFIG/Baseband-guard" ]; then
             cd "$CONFIG/Baseband-guard"
             BBG_COMMIT=$(git rev-parse HEAD)
             BBG_URL="https://github.com/vc-teahouse/Baseband-guard/commit/$BBG_COMMIT"
-            echo "- **Baseband-guard**: [$BBG_COMMIT]($BBG_URL)" >> "$GITHUB_WORKSPACE/build_summary.md"
+            echo "- **Baseband-guard**:[$BBG_COMMIT]($BBG_URL)" >> "$GITHUB_WORKSPACE/build_summary.md"
             cd "$GITHUB_WORKSPACE"
           else
             echo "- **Baseband-guard**: not present" >> build_summary.md
           fi
           
           # Get SUSFS4KSU commit
-          if [ -d "$GITHUB_WORKSPACE/susfs4ksu" ]; then
+          if[ -d "$GITHUB_WORKSPACE/susfs4ksu" ]; then
             cd "$GITHUB_WORKSPACE/susfs4ksu"
             SUSFS_COMMIT=$(git rev-parse HEAD)
             SUSFS_URL="https://gitlab.com/simonpunk/susfs4ksu/-/commit/$SUSFS_COMMIT"
@@ -821,15 +830,15 @@ jobs:
           echo "### Misc (uploaded files)" >> build_summary.md
           FILES_PRESENT=0
           for f in "${{ env.FILE_NAME }}-Image" "${{ env.FILE_NAME }}-Image.gz" "${{ env.FILE_NAME }}-Image.lz4" "${{ env.FILE_NAME }}-boot.img" "${{ env.FILE_NAME }}-boot-gz.img" "${{ env.FILE_NAME }}-boot-lz4.img"; do
-            if [ -f "$f" ]; then FILES_PRESENT=$((FILES_PRESENT+1)); fi
+            if[ -f "$f" ]; then FILES_PRESENT=$((FILES_PRESENT+1)); fi
           done
-          if [ "$FILES_PRESENT" -gt 0 ]; then
+          if[ "$FILES_PRESENT" -gt 0 ]; then
             MISC_STATUS="✅"
           else
             MISC_STATUS="❌"
           fi
           echo "- **Set**: $MISC_STATUS ${{ env.FILE_NAME }}-Misc" >> build_summary.md
-          if [ "$MISC_STATUS" = "✅" ]; then
+          if[ "$MISC_STATUS" = "✅" ]; then
             echo "  Included:" >> build_summary.md
             for f in "${{ env.FILE_NAME }}-Image" "${{ env.FILE_NAME }}-Image.gz" "${{ env.FILE_NAME }}-Image.lz4" "${{ env.FILE_NAME }}-boot.img" "${{ env.FILE_NAME }}-boot-gz.img" "${{ env.FILE_NAME }}-boot-lz4.img"; do
               if [ -f "$f" ]; then
@@ -852,4 +861,3 @@ jobs:
           else
             echo "  No rejected patches found." >> build_summary.md
           fi
-
